@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Analytics — LifeTrack</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<style>.chart-card canvas{width:100%;height:180px;display:block;}</style>
+</head>
+<body data-page="analytics.html">
+<script src="script.js"></script>
+<script>
+buildShell('Analytics');
+const user = DB.currentUser();
+const data = DB.getData(user.id);
+const today = todayStr();
+const last7 = Array.from({length:7}, (_,i) => addDays(today, i-6));
+const dayLabels = last7.map(d => new Date(d+'T00:00:00').toLocaleDateString('en-US',{weekday:'short'}));
+
+const CATS = ['Food','Travel','Shopping','Bills','Others'];
+const CAT_COLORS = { Food:'#22C55E', Travel:'#2563EB', Shopping:'#F59E0B', Bills:'#EF4444', Others:'#64748B' };
+const ym = today.slice(0,7);
+const catTotals = CATS.map(c => ({ cat:c, value: data.transactions.filter(t=>t.type==='expense'&&t.category===c&&t.date.startsWith(ym)).reduce((s,t)=>s+Number(t.amount),0), color: CAT_COLORS[c] }));
+
+const weeklySpend = last7.map(d => data.transactions.filter(t=>t.type==='expense'&&t.date===d).reduce((s,t)=>s+Number(t.amount),0));
+const foodConsistency = last7.map(d => data.food.filter(f=>f.date===d).length);
+const routineCompletion = last7.map(d => dailyPercent(data, d));
+
+const monthIncome = data.transactions.filter(t=>t.type==='income'&&t.date.startsWith(ym)).reduce((s,t)=>s+Number(t.amount),0);
+const monthExp = data.transactions.filter(t=>t.type==='expense'&&t.date.startsWith(ym)).reduce((s,t)=>s+Number(t.amount),0);
+
+qs('#pageContent').innerHTML = `
+  <div class="grid grid-2 mb-16 stagger">
+    <div class="card chart-card">
+      <div class="section-title">Expense by category <span class="muted">this month</span></div>
+      ${catTotals.every(c=>c.value===0) ? `<div class="empty-state">${ICONS.empty}<b>No expenses yet</b></div>` : `
+      <div class="flex items-center gap-12" style="flex-wrap:wrap;">
+        <canvas id="donutCat" style="width:150px;height:150px;flex-shrink:0;"></canvas>
+        <div style="flex:1;min-width:160px;">
+          ${catTotals.map(c => `<div class="flex items-center gap-8 text-sm" style="margin-bottom:8px;">
+            <span style="width:10px;height:10px;border-radius:3px;background:${c.color};display:inline-block;"></span>
+            <span style="flex:1;">${c.cat}</span><b>${fmtMoney(c.value)}</b>
+          </div>`).join('')}
+        </div>
+      </div>`}
+    </div>
+    <div class="card chart-card">
+      <div class="section-title">Weekly spending <span class="muted">last 7 days</span></div>
+      <canvas id="lineSpend"></canvas>
+    </div>
+  </div>
+
+  <div class="grid grid-2 mb-16 stagger">
+    <div class="card chart-card">
+      <div class="section-title">Food logging consistency <span class="muted">meals/day</span></div>
+      <canvas id="barFood"></canvas>
+    </div>
+    <div class="card chart-card">
+      <div class="section-title">Routine completion <span class="muted">% per day</span></div>
+      <canvas id="barRoutine"></canvas>
+    </div>
+  </div>
+
+  <div class="grid grid-2 stagger">
+    <div class="card flex flex-col items-center" style="justify-content:center;">
+      <div class="section-title" style="align-self:flex-start;">Today's completion</div>
+      ${scoreRing(dailyPercent(data,today), 140, 12, 'completed')}
+    </div>
+    <div class="card">
+      <div class="section-title">Monthly summary</div>
+      <div class="grid grid-2" style="gap:10px;">
+        <div class="card" style="box-shadow:none;"><span class="stat-label">Income</span><div class="stat-value" style="color:var(--success);">${fmtMoney(monthIncome)}</div></div>
+        <div class="card" style="box-shadow:none;"><span class="stat-label">Expenses</span><div class="stat-value" style="color:var(--danger);">${fmtMoney(monthExp)}</div></div>
+      </div>
+      <div class="mt-16">
+        <div class="flex justify-between text-sm mb-16" style="margin-bottom:6px;"><b>Net saved this month</b><span>${fmtMoney(monthIncome-monthExp)}</span></div>
+        <div class="pbar ${monthIncome-monthExp>=0?'success':'danger'}"><div style="width:${clamp(Math.abs((monthIncome-monthExp)/(monthIncome||1)*100),0,100)}%"></div></div>
+      </div>
+    </div>
+  </div>
+`;
+
+if (!catTotals.every(c=>c.value===0)) drawDonut(qs('#donutCat'), catTotals);
+drawLineChart(qs('#lineSpend'), dayLabels, weeklySpend, '#2563EB');
+drawBarChart(qs('#barFood'), dayLabels, foodConsistency, '#22C55E');
+drawBarChart(qs('#barRoutine'), dayLabels, routineCompletion, '#F59E0B');
+animateRings();
+window.addEventListener('resize', () => {
+  if (!catTotals.every(c=>c.value===0)) drawDonut(qs('#donutCat'), catTotals);
+  drawLineChart(qs('#lineSpend'), dayLabels, weeklySpend, '#2563EB');
+  drawBarChart(qs('#barFood'), dayLabels, foodConsistency, '#22C55E');
+  drawBarChart(qs('#barRoutine'), dayLabels, routineCompletion, '#F59E0B');
+});
+</script>
+</body>
+</html>

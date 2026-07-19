@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Food — LifeTrack</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-page="food.html">
+<script src="script.js"></script>
+<script>
+buildShell('Food');
+const user = DB.currentUser();
+let data = DB.getData(user.id);
+let viewDate = todayStr();
+const MEALS = ['Breakfast', 'Lunch', 'Dinner', 'Snacks'];
+let editingId = null;
+
+function render(){
+  const items = data.food.filter(f => f.date === viewDate);
+  const totalCal = items.reduce((s,f) => s + (Number(f.calories)||0), 0);
+  const water = data.water[viewDate] || 0;
+  const waterGoal = 8;
+
+  qs('#pageContent').innerHTML = `
+    <div class="flex justify-between items-center mb-16">
+      <div class="flex gap-8 items-center">
+        <button class="btn btn-ghost btn-sm" id="prevDay">${ICONS.chevron.replace('polyline points="9 18 15 12 9 6"','polyline points="15 18 9 12 15 6"')}</button>
+        <b>${fmtDateNice(viewDate)}</b>
+        <button class="btn btn-ghost btn-sm" id="nextDay" ${viewDate>=todayStr()?'disabled style="opacity:.4"':''}>${ICONS.chevron}</button>
+      </div>
+      <button class="btn btn-primary btn-sm" id="addMealBtn">${ICONS.plus} Add meal</button>
+    </div>
+
+    <div class="grid grid-3 mb-16 stagger">
+      <div class="card stat-card"><div class="stat-top"><span class="stat-label">Meals logged</span><div class="stat-icon bg-success">${ICONS.food}</div></div><div class="stat-value">${items.length}</div></div>
+      <div class="card stat-card"><div class="stat-top"><span class="stat-label">Calories (est.)</span><div class="stat-icon bg-warning">${ICONS.analytics}</div></div><div class="stat-value">${totalCal}</div></div>
+      <div class="card stat-card">
+        <div class="stat-top"><span class="stat-label">Water intake</span><div class="stat-icon bg-primary">${ICONS.droplet}</div></div>
+        <div class="flex items-center gap-8">
+          <button class="btn btn-ghost btn-sm" id="waterMinus" style="min-height:32px;padding:6px 10px;">−</button>
+          <div class="stat-value" style="font-size:20px;">${water}/${waterGoal}</div>
+          <button class="btn btn-ghost btn-sm" id="waterPlus" style="min-height:32px;padding:6px 10px;">+</button>
+        </div>
+        <div class="pbar"><div style="width:${clamp(water/waterGoal*100,0,100)}%"></div></div>
+      </div>
+    </div>
+
+    <div class="grid grid-2 stagger" id="mealSections"></div>
+  `;
+
+  qs('#mealSections').innerHTML = MEALS.map(m => {
+    const mealItems = items.filter(f => f.meal === m);
+    return `<div class="card">
+      <div class="section-title">${m} <span class="muted">${mealItems.length} item${mealItems.length===1?'':'s'}</span></div>
+      ${mealItems.length ? mealItems.map(f => `
+        <div class="flex items-center justify-between" style="padding:9px 0;border-bottom:1px solid var(--border);">
+          <div><div style="font-weight:700;font-size:13.5px;">${f.name}</div><div class="text-sm muted">${f.calories ? f.calories + ' kcal · ' : ''}${f.notes || ''}</div></div>
+          <div class="row-actions"><button class="btn btn-outline btn-sm" data-edit="${f.id}">${ICONS.edit}</button><button class="btn btn-outline btn-sm" data-del="${f.id}">${ICONS.trash}</button></div>
+        </div>`).join('') : `<p class="text-sm muted" style="padding:8px 0;">No ${m.toLowerCase()} logged.</p>`}
+    </div>`;
+  }).join('');
+
+  qs('#prevDay').addEventListener('click', () => { viewDate = addDays(viewDate,-1); render(); });
+  qs('#nextDay').addEventListener('click', () => { if (viewDate < todayStr()) { viewDate = addDays(viewDate,1); render(); } });
+  qs('#addMealBtn').addEventListener('click', () => openMealModal());
+  qs('#waterPlus').addEventListener('click', () => { data.water[viewDate] = (data.water[viewDate]||0)+1; DB.saveData(user.id,data); render(); });
+  qs('#waterMinus').addEventListener('click', () => { data.water[viewDate] = Math.max(0,(data.water[viewDate]||0)-1); DB.saveData(user.id,data); render(); });
+  qsa('[data-edit]').forEach(b => b.addEventListener('click', () => openMealModal(b.dataset.edit)));
+  qsa('[data-del]').forEach(b => b.addEventListener('click', () => {
+    confirmAction('Delete this meal entry?', () => {
+      data.food = data.food.filter(f => f.id !== b.dataset.del);
+      DB.saveData(user.id, data);
+      render();
+      toast('Meal deleted');
+    });
+  }));
+}
+
+function openMealModal(id){
+  editingId = id || null;
+  const existing = id ? data.food.find(f => f.id === id) : null;
+  let bd = qs('#mealModal');
+  if (!bd) {
+    bd = document.createElement('div');
+    bd.id = 'mealModal';
+    bd.className = 'modal-backdrop';
+    document.body.appendChild(bd);
+    bd.addEventListener('click', (e) => { if (e.target === bd) closeModal('mealModal'); });
+  }
+  bd.innerHTML = `<div class="modal">
+    <div class="modal-head"><h3>${existing ? 'Edit meal' : 'Add meal'}</h3><button class="close-x" onclick="closeModal('mealModal')">✕</button></div>
+    <form id="mealForm">
+      <div class="field"><label>Meal type</label>
+        <select class="input" id="mMeal">${MEALS.map(m => `<option ${existing && existing.meal===m ? 'selected':''}>${m}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>Food name</label><input class="input" id="mName" placeholder="e.g. Grilled chicken salad" value="${existing ? existing.name : ''}" required></div>
+      <div class="field"><label>Calories (optional)</label><input class="input" type="number" min="0" id="mCal" placeholder="e.g. 350" value="${existing && existing.calories ? existing.calories : ''}"></div>
+      <div class="field"><label>Notes</label><textarea class="input" id="mNotes" placeholder="Anything to remember...">${existing ? existing.notes || '' : ''}</textarea></div>
+      <button class="btn btn-primary btn-block" type="submit">${existing ? 'Save changes' : 'Add meal'}</button>
+    </form>
+  </div>`;
+  openModal('mealModal');
+  qs('#mealForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const name = qs('#mName').value.trim();
+    if (!name) return;
+    const payload = { meal: qs('#mMeal').value, name, calories: qs('#mCal').value ? parseInt(qs('#mCal').value) : null, notes: qs('#mNotes').value.trim() };
+    if (existing) {
+      Object.assign(existing, payload);
+      toast('Meal updated', 'success');
+    } else {
+      data.food.push({ id: uid(), date: viewDate, ...payload });
+      toast('Meal added', 'success');
+    }
+    DB.saveData(user.id, data);
+    closeModal('mealModal');
+    render();
+  });
+}
+
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>LifeTrack — Your day, quantified</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<style>
+  .landing{min-height:100vh;display:flex;flex-direction:column;background:var(--bg);}
+  .landing-nav{display:flex;align-items:center;justify-content:space-between;padding:20px 24px;max-width:1100px;margin:0 auto;width:100%;}
+  .landing-hero{flex:1;display:flex;align-items:center;justify-content:center;padding:20px;}
+  .hero-inner{max-width:520px;text-align:center;}
+  .hero-badge{display:inline-flex;align-items:center;gap:6px;background:var(--primary-light);color:var(--primary-dark);font-weight:700;font-size:12.5px;padding:6px 12px;border-radius:99px;margin-bottom:18px;}
+  .hero-title{font-size:38px;line-height:1.1;margin-bottom:14px;}
+  .hero-sub{color:var(--text-muted);font-size:15.5px;margin-bottom:26px;line-height:1.55;}
+  .hero-actions{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;}
+  .mini-rings{display:flex;gap:18px;justify-content:center;margin-top:40px;flex-wrap:wrap;}
+  .mini-ring-label{font-size:11.5px;color:var(--text-muted);font-weight:700;margin-top:6px;text-align:center;}
+</style>
+</head>
+<body>
+<div class="landing">
+  <div class="landing-nav">
+    <div class="brand"><div class="brand-mark">PL</div><span>LifeTrack</span></div>
+    <div class="flex gap-8">
+      <button class="icon-btn" id="themeToggle"></button>
+      <a href="login.html" class="btn btn-outline btn-sm hide-desktop-none">Log in</a>
+    </div>
+  </div>
+  <div class="landing-hero">
+    <div class="hero-inner fade-in">
+      <span class="hero-badge">✦ Personal Life Tracker</span>
+      <h1 class="hero-title">Every habit, rupee and routine — in one score.</h1>
+      <p class="hero-sub">Track your daily routines, meals, expenses and recurring chores in a single, calm dashboard. No sign-up servers, no ads — just your data, saved right on your device.</p>
+      <div class="hero-actions">
+        <a href="register.html" class="btn btn-primary">Create free account</a>
+        <a href="login.html" class="btn btn-outline">Log in</a>
+      </div>
+      <div class="mini-rings" id="miniRings"></div>
+    </div>
+  </div>
+</div>
+<script src="script.js"></script>
+<script>
+  // if already logged in, go straight to dashboard
+  if (DB.currentUser()) location.href = 'dashboard.html';
+
+  qs('#themeToggle').innerHTML = (localStorage.getItem('plt_theme') === 'dark') ? ICONS.sun : ICONS.moon;
+  qs('#themeToggle').addEventListener('click', () => { toggleThemeLocal(); });
+  function toggleThemeLocal(){
+    const cur = localStorage.getItem('plt_theme') || 'light';
+    const next = cur === 'light' ? 'dark' : 'light';
+    localStorage.setItem('plt_theme', next);
+    applyTheme();
+    qs('#themeToggle').innerHTML = next === 'dark' ? ICONS.sun : ICONS.moon;
+  }
+
+  qs('#miniRings').innerHTML = [
+    scoreRing(82, 84, 8, 'routine'),
+    scoreRing(64, 84, 8, 'food log'),
+    scoreRing(93, 84, 8, 'budget'),
+  ].join('');
+  animateRings();
+</script>
+</body>
+</html>

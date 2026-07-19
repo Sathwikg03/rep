@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Admin — LifeTrack</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<style>.chart-card canvas{width:100%;height:170px;display:block;}</style>
+</head>
+<body data-page="admin.html">
+<script src="script.js"></script>
+<script>
+buildShell('Admin');
+const users = DB.getUsers();
+const today = todayStr();
+const allData = users.map(u => ({ user: u, data: DB.getData(u.id) }));
+
+const totalUsers = users.length;
+const todaysExpensesAll = allData.reduce((s, {data}) => s + todaysExpense(data), 0);
+const pendingRoutinesAll = allData.reduce((s, {data}) => s + data.dailyItems.filter(i => !(data.routineLog[today]||{})[i.id]).length, 0);
+const mealsTodayAll = allData.reduce((s, {data}) => s + data.food.filter(f=>f.date===today).length, 0);
+const totalTx = allData.reduce((s,{data}) => s + data.transactions.length, 0);
+const totalRecurring = allData.reduce((s,{data}) => s + data.recurring.length, 0);
+const totalOverdue = allData.reduce((s,{data}) => s + overdueRecurring(data).length, 0);
+
+const last7 = Array.from({length:7}, (_,i) => addDays(today, i-6));
+const dayLabels = last7.map(d => new Date(d+'T00:00:00').toLocaleDateString('en-US',{weekday:'short'}));
+const signupsPerDay = last7.map(d => users.filter(u => todayStr(new Date(u.createdAt)) === d).length);
+const avgCompletionPerDay = last7.map(d => {
+  const vals = allData.map(({data}) => dailyPercent(data, d));
+  return vals.length ? Math.round(vals.reduce((a,b)=>a+b,0)/vals.length) : 0;
+});
+
+qs('#pageContent').innerHTML = `
+  <div class="grid grid-4 mb-16 stagger">
+    <div class="card stat-card"><div class="stat-top"><span class="stat-label">Total users</span><div class="stat-icon bg-primary">${ICONS.users}</div></div><div class="stat-value">${totalUsers}</div></div>
+    <div class="card stat-card"><div class="stat-top"><span class="stat-label">Today's expenses</span><div class="stat-icon bg-danger">${ICONS.money}</div></div><div class="stat-value">${fmtMoney(todaysExpensesAll)}</div></div>
+    <div class="card stat-card"><div class="stat-top"><span class="stat-label">Pending routines</span><div class="stat-icon bg-warning">${ICONS.routine}</div></div><div class="stat-value">${pendingRoutinesAll}</div></div>
+    <div class="card stat-card"><div class="stat-top"><span class="stat-label">Meals logged today</span><div class="stat-icon bg-success">${ICONS.food}</div></div><div class="stat-value">${mealsTodayAll}</div></div>
+  </div>
+
+  <div class="grid grid-2 mb-16 stagger">
+    <div class="card chart-card">
+      <div class="section-title">New sign-ups <span class="muted">last 7 days</span></div>
+      <canvas id="barSignups"></canvas>
+    </div>
+    <div class="card chart-card">
+      <div class="section-title">Avg. daily completion <span class="muted">across all users</span></div>
+      <canvas id="lineCompletion"></canvas>
+    </div>
+  </div>
+
+  <div class="grid grid-3 mb-16 stagger">
+    <div class="card stat-card"><span class="stat-label">Total transactions</span><div class="stat-value">${totalTx}</div></div>
+    <div class="card stat-card"><span class="stat-label">Recurring chores tracked</span><div class="stat-value">${totalRecurring}</div></div>
+    <div class="card stat-card"><span class="stat-label">Overdue chores</span><div class="stat-value" style="color:${totalOverdue?'var(--danger)':'inherit'}">${totalOverdue}</div></div>
+  </div>
+
+  <div class="card">
+    <div class="section-title">All users <span class="muted">${totalUsers} accounts</span></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Name</th><th>Email</th><th>Joined</th><th>Today's score</th><th>Balance</th></tr></thead>
+      <tbody>
+        ${allData.map(({user,data}) => `<tr>
+          <td style="font-weight:700;">${user.name}</td>
+          <td class="muted">${user.email}</td>
+          <td class="muted">${new Date(user.createdAt).toLocaleDateString()}</td>
+          <td><span class="badge bg-primary">${dailyPercent(data,today)}%</span></td>
+          <td style="font-weight:700;color:${balance(data)>=0?'var(--success)':'var(--danger)'}">${fmtMoney(balance(data))}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>
+  </div>
+`;
+
+drawBarChart(qs('#barSignups'), dayLabels, signupsPerDay, '#2563EB');
+drawLineChart(qs('#lineCompletion'), dayLabels, avgCompletionPerDay, '#22C55E');
+window.addEventListener('resize', () => {
+  drawBarChart(qs('#barSignups'), dayLabels, signupsPerDay, '#2563EB');
+  drawLineChart(qs('#lineCompletion'), dayLabels, avgCompletionPerDay, '#22C55E');
+});
+</script>
+</body>
+</html>

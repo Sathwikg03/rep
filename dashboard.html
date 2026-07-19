@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Dashboard — LifeTrack</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-page="dashboard.html">
+<script src="script.js"></script>
+<script>
+buildShell('Dashboard');
+const user = DB.currentUser();
+const data = DB.getData(user.id);
+const today = todayStr();
+const pct = dailyPercent(data, today);
+const water = data.water[today] || 0;
+const waterGoal = 8;
+const expenseToday = todaysExpense(data);
+const mealsToday = data.food.filter(f => f.date === today).length;
+const pendingRoutines = data.dailyItems.filter(i => !(data.routineLog[today] || {})[i.id]);
+const overdue = overdueRecurring(data);
+
+const recentActivity = [
+  ...data.food.map(f => ({ t: f.date, text: `Logged ${f.meal.toLowerCase()}: ${f.name}`, icon: 'food' })),
+  ...data.transactions.map(t => ({ t: t.date, text: `${t.type === 'income' ? 'Income' : 'Expense'}: ${t.category} ${fmtMoney(t.amount)}`, icon: 'money' })),
+].sort((a, b) => b.t.localeCompare(a.t)).slice(0, 6);
+
+qs('#pageContent').innerHTML = `
+  <div class="grid ring-split stagger mb-16">
+    <div class="card hoverable fade-in flex flex-col items-center" style="justify-content:center;gap:6px;">
+      <span class="stat-label">${fmtDateNice(today)}</span>
+      ${scoreRing(pct, 132, 11, 'daily score')}
+      <span class="text-sm muted" style="margin-top:4px;">${data.dailyItems.filter(i=>(data.routineLog[today]||{})[i.id]).length} of ${data.dailyItems.length} routines done</span>
+    </div>
+    <div class="grid grid-2 stagger" style="align-content:start;">
+      <div class="card hoverable stat-card">
+        <div class="stat-top"><span class="stat-label">Today's expenses</span><div class="stat-icon bg-danger">${ICONS.money}</div></div>
+        <div class="stat-value">${fmtMoney(expenseToday)}</div>
+        <span class="text-sm muted">Balance: ${fmtMoney(balance(data))}</span>
+      </div>
+      <div class="card hoverable stat-card">
+        <div class="stat-top"><span class="stat-label">Water intake</span><div class="stat-icon bg-primary">${ICONS.droplet}</div></div>
+        <div class="stat-value">${water}/${waterGoal} <span style="font-size:14px;font-weight:600;color:var(--text-muted);">glasses</span></div>
+        <div class="pbar"><div style="width:${clamp(water/waterGoal*100,0,100)}%"></div></div>
+      </div>
+      <div class="card hoverable stat-card">
+        <div class="stat-top"><span class="stat-label">Meals logged today</span><div class="stat-icon bg-success">${ICONS.food}</div></div>
+        <div class="stat-value">${mealsToday}<span style="font-size:14px;font-weight:600;color:var(--text-muted);"> / 4</span></div>
+        <span class="text-sm muted">Breakfast · Lunch · Dinner · Snacks</span>
+      </div>
+      <div class="card hoverable stat-card">
+        <div class="stat-top"><span class="stat-label">Pending routines</span><div class="stat-icon bg-warning">${ICONS.routine}</div></div>
+        <div class="stat-value">${pendingRoutines.length}</div>
+        <span class="text-sm muted">${pendingRoutines.slice(0,2).map(p=>p.name).join(', ') || 'All caught up 🎉'}</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-title fade-in">Quick actions</div>
+  <div class="grid grid-4 mb-16 stagger">
+    <button class="btn btn-outline" onclick="location.href='food.html'">${ICONS.plus} Log a meal</button>
+    <button class="btn btn-outline" onclick="location.href='money.html'">${ICONS.plus} Add expense</button>
+    <button class="btn btn-outline" onclick="location.href='routine.html'">${ICONS.check} Mark routine</button>
+    <button class="btn btn-outline" onclick="location.href='analytics.html'">${ICONS.analytics} View analytics</button>
+  </div>
+
+  <div class="grid grid-2">
+    <div class="card fade-in">
+      <div class="section-title">Recent activity <span class="muted">last 6</span></div>
+      ${recentActivity.length ? recentActivity.map(a => `
+        <div class="flex items-center gap-12" style="padding:10px 0;border-bottom:1px solid var(--border);">
+          <div class="stat-icon bg-primary" style="width:34px;height:34px;">${ICONS[a.icon]}</div>
+          <div style="flex:1;"><div style="font-weight:700;font-size:13.5px;">${a.text}</div><div class="text-sm muted">${fmtDateNice(a.t)}</div></div>
+        </div>`).join('') : `<div class="empty-state">${ICONS.empty}<b>No activity yet</b><span>Start by logging a meal or expense.</span></div>`}
+    </div>
+    <div class="card fade-in">
+      <div class="section-title">Recurring routines <span class="muted">${overdue.length} overdue</span></div>
+      ${data.recurring.length ? data.recurring.slice(0,5).map(r => {
+        const due = addDays(r.lastCompleted, r.frequencyDays);
+        const isOverdue = due <= today;
+        return `<div class="flex items-center justify-between" style="padding:10px 0;border-bottom:1px solid var(--border);">
+          <div><div style="font-weight:700;font-size:13.5px;">${r.name}</div><div class="text-sm muted">Every ${r.frequencyDays} days · next ${fmtDateNice(due)}</div></div>
+          <span class="badge ${isOverdue ? 'bg-danger' : 'bg-success'}">${isOverdue ? 'Overdue' : 'On track'}</span>
+        </div>`;
+      }).join('') : `<div class="empty-state">${ICONS.empty}<b>No routines yet</b><span>Add one from the Routine tab.</span></div>`}
+    </div>
+  </div>
+`;
+animateRings();
+</script>
+</body>
+</html>

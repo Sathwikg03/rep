@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Routine — LifeTrack</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-page="routine.html">
+<script src="script.js"></script>
+<script>
+buildShell('Routine');
+const user = DB.currentUser();
+let data = DB.getData(user.id);
+let tab = 'daily';
+let viewDate = todayStr();
+
+function iconFor(id){ return ICONS[id] || ICONS.check; }
+
+function render() {
+  const pct = dailyPercent(data, viewDate);
+  qs('#pageContent').innerHTML = `
+    <div class="segmented mb-16" id="tabs">
+      <button data-tab="daily" class="${tab==='daily'?'active':''}">Daily routine</button>
+      <button data-tab="recurring" class="${tab==='recurring'?'active':''}">Recurring chores</button>
+    </div>
+    <div id="tabBody"></div>
+  `;
+  qsa('#tabs button').forEach(b => b.addEventListener('click', () => { tab = b.dataset.tab; render(); }));
+  if (tab === 'daily') renderDaily(); else renderRecurring();
+}
+
+function renderDaily(){
+  const log = data.routineLog[viewDate] || {};
+  const pct = dailyPercent(data, viewDate);
+  qs('#tabBody').innerHTML = `
+    <div class="grid mb-16 ring-split">
+      <div class="card flex flex-col items-center" style="justify-content:center;">
+        ${scoreRing(pct, 120, 10, viewDate === todayStr() ? 'today' : 'that day')}
+      </div>
+      <div class="card">
+        <div class="flex items-center justify-between mb-16">
+          <div class="section-title" style="margin:0;">Checklist for ${fmtDateNice(viewDate)}</div>
+          <div class="flex gap-8">
+            <button class="btn btn-ghost btn-sm" id="prevDay">${ICONS.chevron.replace('polyline points="9 18 15 12 9 6"','polyline points="15 18 9 12 15 6"')}</button>
+            <button class="btn btn-ghost btn-sm" id="nextDay" ${viewDate>=todayStr()?'disabled style="opacity:.4"':''}>${ICONS.chevron}</button>
+          </div>
+        </div>
+        <div id="checklist">
+          ${data.dailyItems.map(item => {
+            const done = !!log[item.id];
+            const streak = currentStreak(data, item.id);
+            return `<div class="routine-row">
+              <div class="routine-check ${done?'done':''}" data-id="${item.id}">${done ? ICONS.check : ''}</div>
+              <div class="stat-icon bg-primary" style="width:32px;height:32px;">${iconFor(item.icon)}</div>
+              <div class="routine-name ${done?'done-text':''}">${item.name}</div>
+              <div class="routine-streak">🔥 ${streak}d</div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+  qsa('.routine-check').forEach(c => c.addEventListener('click', () => toggleItem(c.dataset.id)));
+  qs('#prevDay').addEventListener('click', () => { viewDate = addDays(viewDate, -1); renderDaily(); });
+  qs('#nextDay').addEventListener('click', () => { if (viewDate < todayStr()) { viewDate = addDays(viewDate, 1); renderDaily(); } });
+}
+
+function toggleItem(id){
+  if (!data.routineLog[viewDate]) data.routineLog[viewDate] = {};
+  data.routineLog[viewDate][id] = !data.routineLog[viewDate][id];
+  DB.saveData(user.id, data);
+  renderDaily();
+  toast(data.routineLog[viewDate][id] ? 'Marked done' : 'Marked undone');
+}
+
+function renderRecurring(){
+  qs('#tabBody').innerHTML = `
+    <div class="flex justify-between items-center mb-16">
+      <div class="section-title" style="margin:0;">Recurring chores <span class="muted">${data.recurring.length} tracked</span></div>
+      <button class="btn btn-primary btn-sm" id="addRecurringBtn">${ICONS.plus} Add</button>
+    </div>
+    <div class="card">
+      ${data.recurring.length ? `<div class="table-wrap"><table>
+        <thead><tr><th>Name</th><th>Frequency</th><th>Last done</th><th>Next due</th><th></th><th></th></tr></thead>
+        <tbody>
+        ${data.recurring.map(r => {
+          const due = addDays(r.lastCompleted, r.frequencyDays);
+          const isOverdue = due <= todayStr();
+          return `<tr>
+            <td style="font-weight:700;">${r.name}</td>
+            <td>every ${r.frequencyDays}d</td>
+            <td>${fmtDateNice(r.lastCompleted)}</td>
+            <td>${fmtDateNice(due)}</td>
+            <td><span class="badge ${isOverdue?'bg-danger':'bg-success'}">${isOverdue?'Overdue':'On track'}</span></td>
+            <td class="row-actions">
+              <button class="btn btn-success btn-sm" data-done="${r.id}">Mark done</button>
+              <button class="btn btn-outline btn-sm" data-hist="${r.id}">History</button>
+              <button class="btn btn-outline btn-sm" data-del="${r.id}">${ICONS.trash}</button>
+            </td>
+          </tr>`;
+        }).join('')}
+        </tbody>
+      </table></div>` : `<div class="empty-state">${ICONS.empty}<b>No recurring chores yet</b><span>Track things like laundry, haircuts, or cleaning.</span></div>`}
+    </div>
+  `;
+  qs('#addRecurringBtn').addEventListener('click', openAddRecurring);
+  qsa('[data-done]').forEach(b => b.addEventListener('click', () => markRecurringDone(b.dataset.done)));
+  qsa('[data-del]').forEach(b => b.addEventListener('click', () => {
+    confirmAction('Delete this recurring chore?', () => {
+      data.recurring = data.recurring.filter(r => r.id !== b.dataset.del);
+      DB.saveData(user.id, data);
+      renderRecurring();
+      toast('Chore deleted');
+    });
+  }));
+  qsa('[data-hist]').forEach(b => b.addEventListener('click', () => showHistory(b.dataset.hist)));
+}
+
+function markRecurringDone(id){
+  const r = data.recurring.find(x => x.id === id);
+  r.history.unshift(r.lastCompleted);
+  r.lastCompleted = todayStr();
+  DB.saveData(user.id, data);
+  renderRecurring();
+  toast(`${r.name} marked complete`, 'success');
+}
+
+function showHistory(id){
+  const r = data.recurring.find(x => x.id === id);
+  let bd = qs('#histModal');
+  if (!bd) {
+    bd = document.createElement('div');
+    bd.id = 'histModal';
+    bd.className = 'modal-backdrop';
+    document.body.appendChild(bd);
+    bd.addEventListener('click', (e) => { if (e.target === bd) closeModal('histModal'); });
+  }
+  bd.innerHTML = `<div class="modal" style="max-width:360px;">
+    <div class="modal-head"><h3>${r.name} history</h3><button class="close-x" onclick="closeModal('histModal')">✕</button></div>
+    ${r.history.length ? `<ul>${r.history.map(h => `<li style="padding:8px 0;border-bottom:1px solid var(--border);font-size:14px;">${fmtDateNice(h)}</li>`).join('')}</ul>` : `<p class="muted text-sm">No history yet — only the current cycle.</p>`}
+  </div>`;
+  openModal('histModal');
+}
+
+function openAddRecurring(){
+  let bd = qs('#addModal');
+  if (!bd) {
+    bd = document.createElement('div');
+    bd.id = 'addModal';
+    bd.className = 'modal-backdrop';
+    document.body.appendChild(bd);
+    bd.addEventListener('click', (e) => { if (e.target === bd) closeModal('addModal'); });
+  }
+  bd.innerHTML = `<div class="modal">
+    <div class="modal-head"><h3>New recurring chore</h3><button class="close-x" onclick="closeModal('addModal')">✕</button></div>
+    <form id="recForm">
+      <div class="field"><label>Name</label><input class="input" id="recName" placeholder="e.g. Change bedsheet" required></div>
+      <div class="field"><label>Repeat every (days)</label><input class="input" type="number" min="1" id="recFreq" value="7" required></div>
+      <div class="field"><label>Last completed</label><input class="input" type="date" id="recLast" value="${todayStr()}"></div>
+      <button class="btn btn-primary btn-block" type="submit">Add chore</button>
+    </form>
+  </div>`;
+  openModal('addModal');
+  qs('#recForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const name = qs('#recName').value.trim();
+    const freq = parseInt(qs('#recFreq').value) || 7;
+    const last = qs('#recLast').value || todayStr();
+    if (!name) return;
+    data.recurring.push({ id: uid(), name, frequencyDays: freq, lastCompleted: last, history: [] });
+    DB.saveData(user.id, data);
+    closeModal('addModal');
+    renderRecurring();
+    toast('Chore added', 'success');
+  });
+}
+
+render();
+</script>
+</body>
+</html>
